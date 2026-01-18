@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  EPA GHG Data API - Cost-effective Lambda deployment using Function URLs
+  Serves FLIGHT API endpoints using DuckDB to query Parquet data from S3
+
+Parameters:
+  S3Bucket:
+    Type: String
+    Default: epa-backups-eia
+    Description: S3 bucket containing Parquet data
+  S3Prefix:
+    Type: String
+    Default: epa_ghg_tables_parquet
+    Description: S3 prefix for Parquet files
+  S3Region:
+    Type: String
+    Default: us-east-1
+    Description: S3 bucket region
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1024
+    Runtime: python3.11
+    Architectures:
+      - arm64  # 20% cheaper than x86_64
+
+Resources:
+  EpaGhgApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: epa-ghg-api
+      Handler: lambda_function.lambda_handler
+      CodeUri: .
+      Description: EPA GHG Data API - queries Parquet files from S3 using DuckDB
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref S3Bucket
+          S3_PREFIX: !Ref S3Prefix
+          S3_REGION: !Ref S3Region
+      # Function URL - FREE alternative to API Gateway
+      FunctionUrlConfig:
+        AuthType: NONE  # Public access (add IAM auth if needed)
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - GET
+            - POST
+            - OPTIONS
+          AllowHeaders:
+            - Content-Type
+            - Accept
+      # IAM policy for S3 read access
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - !Sub 'arn:aws:s3:::${S3Bucket}'
+                - !Sub 'arn:aws:s3:::${S3Bucket}/${S3Prefix}/*'
+      Tags:
+        Project: EPA-GHG-API
+        Environment: Production
+
+Outputs:
+  ApiEndpoint:
+    Description: "Lambda Function URL endpoint"
+    Value: !GetAtt EpaGhgApiFunctionUrl.FunctionUrl
+  FunctionArn:
+    Description: "Lambda Function ARN"
+    Value: !GetAtt EpaGhgApiFunction.Arn
+  FunctionName:
+    Description: "Lambda Function Name"
+    Value: !Ref EpaGhgApiFunction

@@ -1,0 +1,11 @@
+{
+  "name": "epa-flight-local",
+  "version": "1.0.0",
+  "description": "Local copy of EPA FLIGHT (Facility Level Information on GreenHouse gases Tool)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["epa", "flight", "greenhouse", "gas", "emissions"],
+  "license": "MIT"
+}

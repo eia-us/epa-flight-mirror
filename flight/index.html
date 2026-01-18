@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EPA Facility Level GHG Emissions Data</title>
+	  <link rel="shortcut icon" type="image/vnd.microsoft.icon" href="/flight/imgs/favicon.ico"/>
+    <script type="module" crossorigin src="/flight/assets/index-Cb0kLn8B.js"></script>
+    <link rel="stylesheet" crossorigin href="/flight/assets/index-BzKzXl5H.css">
+    <style>
+      /* Custom logo styling */
+      .custom-logo-link {
+        display: flex;
+        align-items: center;
+        text-decoration: none;
+      }
+      .custom-logo-link img {
+        height: 36px;
+        width: auto;
+        object-fit: contain;
+      }
+      /* Make all header logos slightly smaller to fit three */
+      header [class*="brand"] a img {
+        height: 36px !important;
+        max-height: 36px !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Add custom logo after React renders
+      function addCustomLogo() {
+        const brandContainer = document.querySelector('header [class*="brand"]');
+        if (brandContainer && !document.getElementById('custom-logo')) {
+          const logoLink = document.createElement('a');
+          logoLink.id = 'custom-logo';
+          logoLink.href = '#';
+          logoLink.className = 'custom-logo-link';
+          logoLink.style.marginLeft = '8px';
+
+          const logoImg = document.createElement('img');
+          logoImg.src = '/flight/imgs/full-logo@2x.png';
+          logoImg.alt = 'Custom Logo';
+
+          logoLink.appendChild(logoImg);
+          brandContainer.appendChild(logoLink);
+        }
+      }
+
+      // Try to add logo when DOM is ready and periodically after
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => setTimeout(addCustomLogo, 500));
+      } else {
+        setTimeout(addCustomLogo, 500);
+      }
+      // Also try after a longer delay in case React takes time to render
+      setTimeout(addCustomLogo, 1000);
+      setTimeout(addCustomLogo, 2000);
+    </script>
+  </body>
+</html>
