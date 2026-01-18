@@ -81,42 +81,59 @@
       function modifyFooter() {
         if (document.getElementById('stored-data-link')) return true;
 
-        // Find elements containing the date text and modify them
+        // Find elements containing the date text
         const allElements = document.body.getElementsByTagName('*');
-        let modified = false;
 
         for (let el of allElements) {
-          // Check direct text content (not children)
           if (el.innerHTML && el.innerHTML.includes('Data reported to EPA as of')) {
             // Remove the date sentence
-            el.innerHTML = el.innerHTML.replace(/Data reported to EPA as of[^<.]*\.?/g, '');
+            el.innerHTML = el.innerHTML.replace(/Data reported to EPA as of[^<]*?(\d{2}\/\d{2}\/\d{4})?\.?/g, '');
 
-            // Add the link
+            // Create and insert the link after this element's parent container
             const link = document.createElement('a');
             link.id = 'stored-data-link';
             link.href = '/flight/data.html';
-            link.className = 'stored-data-link';
+            link.style.cssText = 'display:block;text-align:left;margin-top:8px;color:#0071bc;text-decoration:none;font-size:14px;';
             link.textContent = 'See source data files';
-            el.appendChild(document.createElement('br'));
-            el.appendChild(link);
-            modified = true;
-            break;
+            link.onmouseover = function() { this.style.textDecoration = 'underline'; };
+            link.onmouseout = function() { this.style.textDecoration = 'none'; };
+
+            // Find the best parent to append to
+            let container = el;
+            while (container.parentNode && container.parentNode.tagName !== 'BODY') {
+              if (container.parentNode.children.length > 1) break;
+              container = container.parentNode;
+            }
+            container.parentNode.insertBefore(link, container.nextSibling);
+            return true;
           }
         }
-        return modified;
+        return false;
       }
 
-      // Try to modify footer periodically
+      // Try to modify footer periodically and keep checking
       function tryModifyFooter() {
         if (!modifyFooter()) {
           setTimeout(tryModifyFooter, 500);
         }
       }
 
+      // Multiple attempts to catch React renders
+      setTimeout(tryModifyFooter, 500);
       setTimeout(tryModifyFooter, 1000);
       setTimeout(tryModifyFooter, 2000);
       setTimeout(tryModifyFooter, 3000);
       setTimeout(tryModifyFooter, 5000);
+
+      // Also use MutationObserver to catch dynamic changes
+      const observer = new MutationObserver(() => {
+        if (!document.getElementById('stored-data-link')) {
+          modifyFooter();
+        }
+      });
+      setTimeout(() => {
+        observer.observe(document.body, { childList: true, subtree: true });
+      }, 1000);
     </script>
   </body>
 </html>
