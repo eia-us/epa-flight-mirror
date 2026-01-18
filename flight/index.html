@@ -77,39 +77,37 @@
       setTimeout(addCustomLogo, 1000);
       setTimeout(addCustomLogo, 2000);
 
-      // Modify footer: hide date text and add stored data link
+      // Modify footer: replace date text with stored data link
       function modifyFooter() {
-        // Find footer or bottom area containing "Data reported to EPA"
-        const allElements = document.querySelectorAll('*');
-        let footerModified = false;
+        if (document.getElementById('stored-data-link')) return true;
 
-        for (const el of allElements) {
-          if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
-            const text = el.textContent;
-            if (text && text.includes('Data reported to EPA as of')) {
-              // Hide the date text
-              el.style.display = 'none';
-              footerModified = true;
+        // Find any element containing the EPA date text
+        const walker = document.createTreeWalker(
+          document.body,
+          NodeFilter.SHOW_TEXT,
+          null,
+          false
+        );
 
-              // Add the stored data link after this element
-              if (!document.getElementById('stored-data-link')) {
-                const link = document.createElement('a');
-                link.id = 'stored-data-link';
-                link.href = '/flight/data.html';
-                link.className = 'stored-data-link';
-                link.textContent = 'See stored data';
-                el.parentNode.insertBefore(link, el.nextSibling);
-              }
-              break;
-            }
+        let node;
+        while (node = walker.nextNode()) {
+          if (node.textContent && node.textContent.includes('Data reported to EPA')) {
+            // Replace the text content with our link
+            const parent = node.parentNode;
+            const link = document.createElement('a');
+            link.id = 'stored-data-link';
+            link.href = '/flight/data.html';
+            link.className = 'stored-data-link';
+            link.textContent = 'See source data files';
+            link.style.color = '#0071bc';
+
+            // Clear the parent and add our link
+            parent.textContent = '';
+            parent.appendChild(link);
+            return true;
           }
         }
-
-        // If not found yet, try again
-        if (!footerModified && !document.getElementById('stored-data-link')) {
-          return false;
-        }
-        return true;
+        return false;
       }
 
       // Try to modify footer periodically
@@ -122,6 +120,7 @@
       setTimeout(tryModifyFooter, 1000);
       setTimeout(tryModifyFooter, 2000);
       setTimeout(tryModifyFooter, 3000);
+      setTimeout(tryModifyFooter, 5000);
     </script>
   </body>
 </html>
