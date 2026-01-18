@@ -77,33 +77,44 @@
       setTimeout(addCustomLogo, 1000);
       setTimeout(addCustomLogo, 2000);
 
-      // Add source data link to page
+      // Add source data link to page footer
       function addDataLink() {
         if (document.getElementById('stored-data-link')) return;
 
-        // Find footer area - look for the disclaimer text container
-        const allText = document.body.innerText;
-        if (!allText.includes('GHG emissions')) return;
+        // Look for text containing "Exported emission values" which is in the footer
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let node;
+        while (node = walker.nextNode()) {
+          if (node.textContent.includes('Exported emission values')) {
+            // Found the footer area - get its parent container
+            let container = node.parentNode;
 
-        // Find the element with the disclaimer
-        const elements = document.querySelectorAll('div, span, p');
-        for (let el of elements) {
-          if (el.innerText && el.innerText.includes('This data set does not reflect')) {
-            // Create link element
-            const linkDiv = document.createElement('div');
-            linkDiv.id = 'stored-data-link';
-            linkDiv.style.cssText = 'margin-top:8px;';
-            linkDiv.innerHTML = '<a href="/flight/data.html" style="color:#0071bc;text-decoration:none;font-size:14px;">See source data files</a>';
+            // Go up to find a suitable container
+            while (container && container.tagName !== 'BODY') {
+              if (container.tagName === 'DIV' || container.tagName === 'FOOTER') {
+                // Create link
+                const linkDiv = document.createElement('div');
+                linkDiv.id = 'stored-data-link';
+                linkDiv.style.cssText = 'padding:8px 16px;';
+                linkDiv.innerHTML = '<span style="margin-right:8px;">📊</span><a href="/flight/data.html" style="color:#0071bc;text-decoration:none;font-size:14px;">See source data files</a>';
 
-            // Insert after this element
-            el.parentNode.insertBefore(linkDiv, el.nextSibling);
-            return;
+                // Append to this container
+                container.appendChild(linkDiv);
+                return;
+              }
+              container = container.parentNode;
+            }
           }
         }
       }
 
-      // Try periodically
-      setInterval(addDataLink, 1000);
+      // Try periodically until page is loaded
+      const linkInterval = setInterval(() => {
+        addDataLink();
+        if (document.getElementById('stored-data-link')) {
+          clearInterval(linkInterval);
+        }
+      }, 500);
     </script>
   </body>
 </html>
