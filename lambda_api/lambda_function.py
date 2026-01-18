@@ -830,6 +830,25 @@ def handle_state_bounds(event, state_code):
     try:
         state_code = state_code.upper()
 
+        # Handle special cases for US-wide bounds
+        if state_code in ['US', 'LOCAL']:
+            return cors_response(200, {
+                'result': {
+                    'stateName': 'United States',
+                    'stateCode': 'US',
+                    'bounds': {
+                        'minLng': -124.733174,
+                        'maxLng': -66.949895,
+                        'minLat': 24.544701,
+                        'maxLat': 49.384358,
+                        'centerLng': -95.8415345,
+                        'centerLat': 36.9645295
+                    },
+                    'geometry': None
+                },
+                'messages': []
+            })
+
         # Load state geometries
         state_data = get_geo_json('state_geometries.json')
 

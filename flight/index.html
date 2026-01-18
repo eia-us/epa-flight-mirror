@@ -77,63 +77,33 @@
       setTimeout(addCustomLogo, 1000);
       setTimeout(addCustomLogo, 2000);
 
-      // Modify footer: remove date text and add stored data link
-      function modifyFooter() {
-        if (document.getElementById('stored-data-link')) return true;
+      // Add source data link to page
+      function addDataLink() {
+        if (document.getElementById('stored-data-link')) return;
 
-        // Find elements containing the date text
-        const allElements = document.body.getElementsByTagName('*');
+        // Find footer area - look for the disclaimer text container
+        const allText = document.body.innerText;
+        if (!allText.includes('GHG emissions')) return;
 
-        for (let el of allElements) {
-          if (el.innerHTML && el.innerHTML.includes('Data reported to EPA as of')) {
-            // Remove the date sentence
-            el.innerHTML = el.innerHTML.replace(/Data reported to EPA as of[^<]*?(\d{2}\/\d{2}\/\d{4})?\.?/g, '');
+        // Find the element with the disclaimer
+        const elements = document.querySelectorAll('div, span, p');
+        for (let el of elements) {
+          if (el.innerText && el.innerText.includes('This data set does not reflect')) {
+            // Create link element
+            const linkDiv = document.createElement('div');
+            linkDiv.id = 'stored-data-link';
+            linkDiv.style.cssText = 'margin-top:8px;';
+            linkDiv.innerHTML = '<a href="/flight/data.html" style="color:#0071bc;text-decoration:none;font-size:14px;">See source data files</a>';
 
-            // Create and insert the link after this element's parent container
-            const link = document.createElement('a');
-            link.id = 'stored-data-link';
-            link.href = '/flight/data.html';
-            link.style.cssText = 'display:block;text-align:left;margin-top:8px;color:#0071bc;text-decoration:none;font-size:14px;';
-            link.textContent = 'See source data files';
-            link.onmouseover = function() { this.style.textDecoration = 'underline'; };
-            link.onmouseout = function() { this.style.textDecoration = 'none'; };
-
-            // Find the best parent to append to
-            let container = el;
-            while (container.parentNode && container.parentNode.tagName !== 'BODY') {
-              if (container.parentNode.children.length > 1) break;
-              container = container.parentNode;
-            }
-            container.parentNode.insertBefore(link, container.nextSibling);
-            return true;
+            // Insert after this element
+            el.parentNode.insertBefore(linkDiv, el.nextSibling);
+            return;
           }
         }
-        return false;
       }
 
-      // Try to modify footer periodically and keep checking
-      function tryModifyFooter() {
-        if (!modifyFooter()) {
-          setTimeout(tryModifyFooter, 500);
-        }
-      }
-
-      // Multiple attempts to catch React renders
-      setTimeout(tryModifyFooter, 500);
-      setTimeout(tryModifyFooter, 1000);
-      setTimeout(tryModifyFooter, 2000);
-      setTimeout(tryModifyFooter, 3000);
-      setTimeout(tryModifyFooter, 5000);
-
-      // Also use MutationObserver to catch dynamic changes
-      const observer = new MutationObserver(() => {
-        if (!document.getElementById('stored-data-link')) {
-          modifyFooter();
-        }
-      });
-      setTimeout(() => {
-        observer.observe(document.body, { childList: true, subtree: true });
-      }, 1000);
+      // Try periodically
+      setInterval(addDataLink, 1000);
     </script>
   </body>
 </html>
