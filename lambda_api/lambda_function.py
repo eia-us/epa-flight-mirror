@@ -198,12 +198,21 @@ def handle_sectors_total_emissions(event):
     try:
         body = json.loads(event.get('body', '{}') or '{}')
         reporting_year = body.get('reportingYear', 2023)
+        state = body.get('state', 'US')
 
         # Download required Parquet files
         sector_path = get_local_parquet("RLPS_GHG_EMITTER_SECTOR")
         dim_sector_path = get_local_parquet("PUB_DIM_SECTOR")
+        facilities_path = get_local_parquet("RLPS_GHG_EMITTER_FACILITIES")
 
         db = get_connection()
+
+        # Build query with optional state filter
+        state_join = ""
+        state_filter = ""
+        if state and state != 'US':
+            state_join = f"INNER JOIN read_parquet('{facilities_path}') f ON e.facility_id = f.facility_id AND e.year = f.year"
+            state_filter = f"AND f.state = '{state}'"
 
         query = f"""
             SELECT
@@ -214,9 +223,11 @@ def handle_sectors_total_emissions(event):
             FROM read_parquet('{sector_path}') e
             LEFT JOIN read_parquet('{dim_sector_path}') d
                 ON e.sector_name = d.sector_name
+            {state_join}
             WHERE e.year = '{reporting_year}'
                 AND e.sector_type = 'E'
                 AND e.gas_name != 'Biogenic CO2'
+                {state_filter}
             GROUP BY e.sector_name
             ORDER BY total_emissions DESC
         """
@@ -397,22 +408,58 @@ def handle_sector_trend(event, sector_id, level):
     try:
         body = json.loads(event.get('body', '{}') or '{}')
         reporting_year = body.get('reportingYear', 2023)
+        state = body.get('state', 'US')
 
         # Download required Parquet files
         sector_path = get_local_parquet("RLPS_GHG_EMITTER_SECTOR")
+        dim_sector_path = get_local_parquet("PUB_DIM_SECTOR")
+        facilities_path = get_local_parquet("RLPS_GHG_EMITTER_FACILITIES")
 
         db = get_connection()
+
+        # Get sector name from sector_id if provided and not '0' (0 means all sectors)
+        sector_name = None
+        series_name = 'Total GHG Emissions'
+        if sector_id and sector_id != '0':
+            try:
+                sector_id_int = int(sector_id)
+                sector_query = f"""
+                    SELECT sector_name
+                    FROM read_parquet('{dim_sector_path}')
+                    WHERE CAST(sector_id AS INTEGER) = {sector_id_int}
+                    LIMIT 1
+                """
+                sector_result = db.execute(sector_query).fetchone()
+                if sector_result:
+                    sector_name = sector_result[0]
+                    series_name = f'{sector_name} Emissions'
+            except (ValueError, TypeError):
+                pass  # Keep default series name if sector_id is not a valid integer
+
+        # Build query with optional state and sector filters
+        state_join = ""
+        state_filter = ""
+        if state and state != 'US':
+            state_join = f"INNER JOIN read_parquet('{facilities_path}') f ON e.facility_id = f.facility_id AND e.year = f.year"
+            state_filter = f"AND f.state = '{state}'"
+
+        sector_filter = ""
+        if sector_name:
+            sector_filter = f"AND e.sector_name = '{sector_name}'"
 
         # Get emissions by year for trend line (excluding Biogenic CO2)
         query = f"""
             SELECT
-                year,
-                SUM(CAST(co2e_emission AS DOUBLE)) as total_emissions
-            FROM read_parquet('{sector_path}')
-            WHERE sector_type = 'E'
-                AND gas_name != 'Biogenic CO2'
-            GROUP BY year
-            ORDER BY year ASC
+                e.year,
+                SUM(CAST(e.co2e_emission AS DOUBLE)) as total_emissions
+            FROM read_parquet('{sector_path}') e
+            {state_join}
+            WHERE e.sector_type = 'E'
+                AND e.gas_name != 'Biogenic CO2'
+                {state_filter}
+                {sector_filter}
+            GROUP BY e.year
+            ORDER BY e.year ASC
         """
 
         result = db.execute(query).fetchall()
@@ -431,7 +478,7 @@ def handle_sector_trend(event, sector_id, level):
                     'categories': years
                 },
                 'series': [{
-                    'name': 'Total GHG Emissions',
+                    'name': series_name,
                     'data': values,
                     'color': '#1f77b4'
                 }],
@@ -450,12 +497,21 @@ def handle_bar_sector(event, level=None):
     try:
         body = json.loads(event.get('body', '{}') or '{}')
         reporting_year = body.get('reportingYear', 2023)
+        state = body.get('state', 'US')
 
         # Download required Parquet files
         sector_path = get_local_parquet("RLPS_GHG_EMITTER_SECTOR")
         dim_sector_path = get_local_parquet("PUB_DIM_SECTOR")
+        facilities_path = get_local_parquet("RLPS_GHG_EMITTER_FACILITIES")
 
         db = get_connection()
+
+        # Build query with optional state filter
+        state_join = ""
+        state_filter = ""
+        if state and state != 'US':
+            state_join = f"INNER JOIN read_parquet('{facilities_path}') f ON e.facility_id = f.facility_id AND e.year = f.year"
+            state_filter = f"AND f.state = '{state}'"
 
         # Get emissions by sector (excluding Biogenic CO2)
         query = f"""
@@ -467,9 +523,11 @@ def handle_bar_sector(event, level=None):
             FROM read_parquet('{sector_path}') e
             LEFT JOIN read_parquet('{dim_sector_path}') d
                 ON e.sector_name = d.sector_name
+            {state_join}
             WHERE e.year = '{reporting_year}'
                 AND e.sector_type = 'E'
                 AND e.gas_name != 'Biogenic CO2'
+                {state_filter}
             GROUP BY e.sector_name
             ORDER BY total_emissions DESC
         """
@@ -526,12 +584,27 @@ def handle_pie_sectors_emissions(event, level=None, subsector=None):
     try:
         body = json.loads(event.get('body', '{}') or '{}')
         reporting_year = body.get('reportingYear', 2023)
+        state = body.get('state', 'US')
+        sector1 = body.get('sector1', '')
 
         # Download required Parquet files
         sector_path = get_local_parquet("RLPS_GHG_EMITTER_SECTOR")
         dim_sector_path = get_local_parquet("PUB_DIM_SECTOR")
+        facilities_path = get_local_parquet("RLPS_GHG_EMITTER_FACILITIES")
 
         db = get_connection()
+
+        # Build query with optional state filter
+        state_join = ""
+        state_filter = ""
+        if state and state != 'US':
+            state_join = f"INNER JOIN read_parquet('{facilities_path}') f ON e.facility_id = f.facility_id AND e.year = f.year"
+            state_filter = f"AND f.state = '{state}'"
+
+        # For level 2/3, filter by sector if provided (subsector data may not be available)
+        sector_filter = ""
+        if level in ['2', '3'] and sector1:
+            sector_filter = f"AND e.sector_name = '{sector1}'"
 
         # Get emissions by sector (excluding Biogenic CO2)
         query = f"""
@@ -542,9 +615,12 @@ def handle_pie_sectors_emissions(event, level=None, subsector=None):
             FROM read_parquet('{sector_path}') e
             LEFT JOIN read_parquet('{dim_sector_path}') d
                 ON e.sector_name = d.sector_name
+            {state_join}
             WHERE e.year = '{reporting_year}'
                 AND e.sector_type = 'E'
                 AND e.gas_name != 'Biogenic CO2'
+                {state_filter}
+                {sector_filter}
             GROUP BY e.sector_name
             ORDER BY total_emissions DESC
         """
