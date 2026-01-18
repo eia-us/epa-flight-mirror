@@ -54,6 +54,34 @@ def get_local_parquet(table_name):
     except Exception as e:
         raise Exception(f"Failed to download {s3_key}: {e}")
 
+# GeoJSON cache
+geo_cache = {}
+
+def get_geo_json(filename):
+    """Download GeoJSON file from S3 and cache it"""
+    if filename in geo_cache:
+        return geo_cache[filename]
+
+    s3_key = f"epa_ghg_geo/{filename}"
+    local_path = f"/tmp/{filename}"
+
+    # Check if file exists from a previous warm invocation
+    if os.path.exists(local_path):
+        with open(local_path, 'r') as f:
+            data = json.load(f)
+            geo_cache[filename] = data
+            return data
+
+    # Download from S3
+    try:
+        s3_client.download_file(S3_BUCKET, s3_key, local_path)
+        with open(local_path, 'r') as f:
+            data = json.load(f)
+            geo_cache[filename] = data
+            return data
+    except Exception as e:
+        raise Exception(f"Failed to download {s3_key}: {e}")
+
 def cors_response(status_code, body):
     """Return response - CORS headers handled by Function URL config"""
     return {
@@ -722,15 +750,62 @@ def handle_export(event):
         return cors_response(500, {'messages': [{'text': str(e), 'type': 500}]})
 
 def handle_state_bounds(event, state_code):
-    """GET /api/state/bounds/{state} - Return state boundary info"""
-    return cors_response(200, {'messages': []})
+    """GET /api/state/bounds/{state} - Return state boundary and geometry info"""
+    try:
+        state_code = state_code.upper()
+
+        # Load state geometries
+        state_data = get_geo_json('state_geometries.json')
+
+        if state_code not in state_data:
+            return cors_response(404, {
+                'messages': [{'text': f'State not found: {state_code}', 'type': 404}]
+            })
+
+        state_info = state_data[state_code]
+
+        # Return state bounds and geometry in expected format
+        return cors_response(200, {
+            'result': {
+                'stateName': state_info['name'],
+                'stateCode': state_code,
+                'bounds': state_info['bounds'],
+                'geometry': state_info['geometry']
+            },
+            'messages': []
+        })
+    except Exception as e:
+        return cors_response(500, {
+            'messages': [{'text': f'Error loading state bounds: {str(e)}', 'type': 500}]
+        })
 
 def handle_state_counties(event, state_code):
     """GET /api/state/counties/{state} - Return counties for a state"""
-    return cors_response(200, {'result': [], 'messages': []})
+    try:
+        state_code = state_code.upper()
+
+        # Load counties data
+        counties_data = get_geo_json('counties_by_state.json')
+
+        if state_code not in counties_data:
+            return cors_response(200, {'result': [], 'messages': []})
+
+        counties = counties_data[state_code]
+
+        # Return counties in expected format
+        return cors_response(200, {
+            'result': counties,
+            'messages': []
+        })
+    except Exception as e:
+        return cors_response(500, {
+            'messages': [{'text': f'Error loading counties: {str(e)}', 'type': 500}]
+        })
 
 def handle_basin_geo(event):
-    """GET /api/basin/geo - Return basin geometry"""
+    """GET /api/basin/geo - Return basin geometry (petroleum basins)"""
+    # Basin data would require additional GeoJSON - return empty for now
+    # Could be populated later with petroleum basin boundaries if needed
     return cors_response(200, {'result': [], 'messages': []})
 
 def handle_facility_hover(event, year):
