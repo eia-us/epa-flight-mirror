@@ -90,22 +90,28 @@
         );
 
         let node;
+        let targetParent = null;
         while (node = walker.nextNode()) {
           if (node.textContent && node.textContent.includes('Data reported to EPA')) {
-            // Hide only the element containing the date text
-            const parent = node.parentNode;
-            parent.style.display = 'none';
-
-            // Add link after the hidden element
-            const link = document.createElement('a');
-            link.id = 'stored-data-link';
-            link.href = '/flight/data.html';
-            link.className = 'stored-data-link';
-            link.textContent = 'See source data files';
-            link.style.color = '#0071bc';
-            parent.parentNode.insertBefore(link, parent.nextSibling);
-            return true;
+            // Remove just the "Data reported to EPA..." sentence from the text
+            node.textContent = node.textContent.replace(/Data reported to EPA as of[^.]*\.\s*/g, '');
+            targetParent = node.parentNode;
           }
+        }
+
+        // Add link at the end of the footer area
+        if (targetParent) {
+          const link = document.createElement('a');
+          link.id = 'stored-data-link';
+          link.href = '/flight/data.html';
+          link.className = 'stored-data-link';
+          link.textContent = 'See source data files';
+          link.style.color = '#0071bc';
+
+          // Find a good place to insert - after the parent or at end of grandparent
+          const container = targetParent.parentNode;
+          container.appendChild(link);
+          return true;
         }
         return false;
       }
