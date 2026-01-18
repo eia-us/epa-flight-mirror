@@ -81,39 +81,29 @@
       function modifyFooter() {
         if (document.getElementById('stored-data-link')) return true;
 
-        // Find any element containing the EPA date text
-        const walker = document.createTreeWalker(
-          document.body,
-          NodeFilter.SHOW_TEXT,
-          null,
-          false
-        );
+        // Find elements containing the date text and modify them
+        const allElements = document.body.getElementsByTagName('*');
+        let modified = false;
 
-        let node;
-        let targetParent = null;
-        while (node = walker.nextNode()) {
-          if (node.textContent && node.textContent.includes('Data reported to EPA')) {
-            // Remove just the "Data reported to EPA..." sentence from the text
-            node.textContent = node.textContent.replace(/Data reported to EPA as of[^.]*\.\s*/g, '');
-            targetParent = node.parentNode;
+        for (let el of allElements) {
+          // Check direct text content (not children)
+          if (el.innerHTML && el.innerHTML.includes('Data reported to EPA as of')) {
+            // Remove the date sentence
+            el.innerHTML = el.innerHTML.replace(/Data reported to EPA as of[^<.]*\.?/g, '');
+
+            // Add the link
+            const link = document.createElement('a');
+            link.id = 'stored-data-link';
+            link.href = '/flight/data.html';
+            link.className = 'stored-data-link';
+            link.textContent = 'See source data files';
+            el.appendChild(document.createElement('br'));
+            el.appendChild(link);
+            modified = true;
+            break;
           }
         }
-
-        // Add link at the end of the footer area
-        if (targetParent) {
-          const link = document.createElement('a');
-          link.id = 'stored-data-link';
-          link.href = '/flight/data.html';
-          link.className = 'stored-data-link';
-          link.textContent = 'See source data files';
-          link.style.color = '#0071bc';
-
-          // Find a good place to insert - after the parent or at end of grandparent
-          const container = targetParent.parentNode;
-          container.appendChild(link);
-          return true;
-        }
-        return false;
+        return modified;
       }
 
       // Try to modify footer periodically
