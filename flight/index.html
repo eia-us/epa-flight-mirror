@@ -77,7 +77,7 @@
       setTimeout(addCustomLogo, 1000);
       setTimeout(addCustomLogo, 2000);
 
-      // Modify footer: replace date text with stored data link
+      // Modify footer: remove date text and add stored data link
       function modifyFooter() {
         if (document.getElementById('stored-data-link')) return true;
 
@@ -92,18 +92,18 @@
         let node;
         while (node = walker.nextNode()) {
           if (node.textContent && node.textContent.includes('Data reported to EPA')) {
-            // Replace the text content with our link
+            // Hide only the element containing the date text
             const parent = node.parentNode;
+            parent.style.display = 'none';
+
+            // Add link after the hidden element
             const link = document.createElement('a');
             link.id = 'stored-data-link';
             link.href = '/flight/data.html';
             link.className = 'stored-data-link';
             link.textContent = 'See source data files';
             link.style.color = '#0071bc';
-
-            // Clear the parent and add our link
-            parent.textContent = '';
-            parent.appendChild(link);
+            parent.parentNode.insertBefore(link, parent.nextSibling);
             return true;
           }
         }
