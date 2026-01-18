@@ -884,6 +884,109 @@ def handle_basin_geo(event):
     # Could be populated later with petroleum basin boundaries if needed
     return cors_response(200, {'result': [], 'messages': []})
 
+def handle_data_files(event):
+    """GET /api/data/files - List all CSV files available for download"""
+    try:
+        # List all CSV files in the bucket
+        csv_prefix = 'epa_ghg_tables_csvs/'
+        response = s3_client.list_objects_v2(Bucket=S3_BUCKET, Prefix=csv_prefix)
+
+        files = []
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                key = obj['Key']
+                filename = key.replace(csv_prefix, '')
+                if filename and filename.endswith('.csv'):
+                    # Format file size
+                    size_bytes = obj['Size']
+                    if size_bytes < 1024:
+                        size_str = f"{size_bytes} B"
+                    elif size_bytes < 1024 * 1024:
+                        size_str = f"{size_bytes / 1024:.1f} KB"
+                    else:
+                        size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+
+                    files.append({
+                        'filename': filename,
+                        'size': size_str,
+                        'sizeBytes': size_bytes,
+                        'lastModified': obj['LastModified'].isoformat()
+                    })
+
+        # Handle pagination if there are more files
+        while response.get('IsTruncated'):
+            response = s3_client.list_objects_v2(
+                Bucket=S3_BUCKET,
+                Prefix=csv_prefix,
+                ContinuationToken=response['NextContinuationToken']
+            )
+            if 'Contents' in response:
+                for obj in response['Contents']:
+                    key = obj['Key']
+                    filename = key.replace(csv_prefix, '')
+                    if filename and filename.endswith('.csv'):
+                        size_bytes = obj['Size']
+                        if size_bytes < 1024:
+                            size_str = f"{size_bytes} B"
+                        elif size_bytes < 1024 * 1024:
+                            size_str = f"{size_bytes / 1024:.1f} KB"
+                        else:
+                            size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+
+                        files.append({
+                            'filename': filename,
+                            'size': size_str,
+                            'sizeBytes': size_bytes,
+                            'lastModified': obj['LastModified'].isoformat()
+                        })
+
+        # Sort by filename
+        files.sort(key=lambda x: x['filename'])
+
+        return cors_response(200, {
+            'result': {
+                'files': files,
+                'count': len(files)
+            },
+            'messages': []
+        })
+    except Exception as e:
+        print(f"Error in data_files: {e}")
+        return cors_response(500, {'messages': [{'text': str(e), 'type': 500}]})
+
+def handle_data_download(event, filename):
+    """GET /api/data/download/{filename} - Generate presigned URL for file download"""
+    try:
+        # Security: only allow .csv files from the expected prefix
+        if not filename.endswith('.csv') or '/' in filename or '..' in filename:
+            return cors_response(400, {'messages': [{'text': 'Invalid filename', 'type': 400}]})
+
+        s3_key = f'epa_ghg_tables_csvs/{filename}'
+
+        # Check if file exists
+        try:
+            s3_client.head_object(Bucket=S3_BUCKET, Key=s3_key)
+        except:
+            return cors_response(404, {'messages': [{'text': 'File not found', 'type': 404}]})
+
+        # Generate presigned URL (valid for 1 hour)
+        presigned_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': S3_BUCKET, 'Key': s3_key},
+            ExpiresIn=3600
+        )
+
+        return cors_response(200, {
+            'result': {
+                'url': presigned_url,
+                'filename': filename
+            },
+            'messages': []
+        })
+    except Exception as e:
+        print(f"Error in data_download: {e}")
+        return cors_response(500, {'messages': [{'text': str(e), 'type': 500}]})
+
 def handle_facility_hover(event, year):
     """GET /api/facility/hover/{year} - Return facility details for hover popup"""
     try:
@@ -1077,6 +1180,15 @@ def lambda_handler(event, context):
     # Handle export endpoint (path may have query params stripped)
     if path.startswith('/api/export') or path.startswith('/ghgp/api/export'):
         return handle_export(event)
+
+    # Handle data files listing
+    if path in ['/api/data/files', '/ghgp/api/data/files']:
+        return handle_data_files(event)
+
+    # Handle data file download
+    if '/api/data/download/' in path or '/ghgp/api/data/download/' in path:
+        filename = path.split('/')[-1]
+        return handle_data_download(event, filename)
 
     # 404 for unknown routes
     return cors_response(404, {

@@ -32,6 +32,18 @@
         height: 36px !important;
         max-height: 36px !important;
       }
+      /* Style for the data link */
+      .stored-data-link {
+        display: block;
+        text-align: center;
+        margin-top: 10px;
+        color: #0071bc;
+        text-decoration: none;
+        font-size: 14px;
+      }
+      .stored-data-link:hover {
+        text-decoration: underline;
+      }
     </style>
   </head>
   <body>
@@ -64,6 +76,52 @@
       // Also try after a longer delay in case React takes time to render
       setTimeout(addCustomLogo, 1000);
       setTimeout(addCustomLogo, 2000);
+
+      // Modify footer: hide date text and add stored data link
+      function modifyFooter() {
+        // Find footer or bottom area containing "Data reported to EPA"
+        const allElements = document.querySelectorAll('*');
+        let footerModified = false;
+
+        for (const el of allElements) {
+          if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
+            const text = el.textContent;
+            if (text && text.includes('Data reported to EPA as of')) {
+              // Hide the date text
+              el.style.display = 'none';
+              footerModified = true;
+
+              // Add the stored data link after this element
+              if (!document.getElementById('stored-data-link')) {
+                const link = document.createElement('a');
+                link.id = 'stored-data-link';
+                link.href = '/flight/data.html';
+                link.className = 'stored-data-link';
+                link.textContent = 'See stored data';
+                el.parentNode.insertBefore(link, el.nextSibling);
+              }
+              break;
+            }
+          }
+        }
+
+        // If not found yet, try again
+        if (!footerModified && !document.getElementById('stored-data-link')) {
+          return false;
+        }
+        return true;
+      }
+
+      // Try to modify footer periodically
+      function tryModifyFooter() {
+        if (!modifyFooter()) {
+          setTimeout(tryModifyFooter, 500);
+        }
+      }
+
+      setTimeout(tryModifyFooter, 1000);
+      setTimeout(tryModifyFooter, 2000);
+      setTimeout(tryModifyFooter, 3000);
     </script>
   </body>
 </html>

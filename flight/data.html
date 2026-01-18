@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPA GHG Data Files - Download</title>
+    <link rel="shortcut icon" type="image/vnd.microsoft.icon" href="/flight/imgs/favicon.ico"/>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .header {
+            background-color: #0071bc;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 24px;
+        }
+        .header p {
+            margin: 0;
+            opacity: 0.9;
+        }
+        .header a {
+            color: white;
+            text-decoration: underline;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #0071bc;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .stats {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .search-box {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .search-box:focus {
+            outline: none;
+            border-color: #0071bc;
+            box-shadow: 0 0 0 2px rgba(0,113,188,0.2);
+        }
+        .file-list {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .file-header {
+            display: grid;
+            grid-template-columns: 1fr 100px 180px 100px;
+            padding: 12px 20px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+            font-weight: 600;
+            font-size: 14px;
+            color: #666;
+        }
+        .file-row {
+            display: grid;
+            grid-template-columns: 1fr 100px 180px 100px;
+            padding: 12px 20px;
+            border-bottom: 1px solid #eee;
+            align-items: center;
+        }
+        .file-row:last-child {
+            border-bottom: none;
+        }
+        .file-row:hover {
+            background-color: #f8f9fa;
+        }
+        .filename {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            word-break: break-all;
+        }
+        .size {
+            text-align: right;
+            color: #666;
+            font-size: 13px;
+        }
+        .date {
+            color: #666;
+            font-size: 13px;
+        }
+        .download-btn {
+            background: #0071bc;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        .download-btn:hover {
+            background: #005a96;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #d32f2f;
+        }
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        @media (max-width: 768px) {
+            .file-header, .file-row {
+                grid-template-columns: 1fr 80px;
+            }
+            .date, .size {
+                display: none;
+            }
+            .file-header .date, .file-header .size {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>EPA Greenhouse Gas Reporting Program Data</h1>
+        <p>Download raw data files from the EPA GHGRP database | <a href="/flight/">Back to FLIGHT Mirror</a></p>
+    </div>
+
+    <div class="container">
+        <a href="/flight/" class="back-link">&larr; Back to FLIGHT Data Tool</a>
+
+        <div class="stats" id="stats">
+            Loading file list...
+        </div>
+
+        <input type="text" class="search-box" id="search" placeholder="Search files (e.g., FACILITIES, SECTOR, EMISSIONS)..." disabled>
+
+        <div class="file-list" id="fileList">
+            <div class="loading">Loading files...</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://2a56uptno4ikx5wiar6lhcgd7m0ngigk.lambda-url.us-east-1.on.aws';
+        let allFiles = [];
+
+        async function loadFiles() {
+            try {
+                const response = await fetch(`${API_BASE}/api/data/files`);
+                const data = await response.json();
+
+                if (data.result && data.result.files) {
+                    allFiles = data.result.files;
+                    document.getElementById('stats').textContent = `${allFiles.length} data files available for download`;
+                    document.getElementById('search').disabled = false;
+                    renderFiles(allFiles);
+                } else {
+                    throw new Error('Invalid response format');
+                }
+            } catch (error) {
+                document.getElementById('fileList').innerHTML = `<div class="error">Error loading files: ${error.message}</div>`;
+                document.getElementById('stats').textContent = 'Error loading file list';
+            }
+        }
+
+        function renderFiles(files) {
+            const container = document.getElementById('fileList');
+
+            if (files.length === 0) {
+                container.innerHTML = '<div class="no-results">No files match your search</div>';
+                return;
+            }
+
+            let html = `
+                <div class="file-header">
+                    <div>Filename</div>
+                    <div class="size">Size</div>
+                    <div class="date">Last Modified</div>
+                    <div></div>
+                </div>
+            `;
+
+            for (const file of files) {
+                const date = new Date(file.lastModified).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                });
+
+                html += `
+                    <div class="file-row">
+                        <div class="filename">${file.filename}</div>
+                        <div class="size">${file.size}</div>
+                        <div class="date">${date}</div>
+                        <div>
+                            <button class="download-btn" onclick="downloadFile('${file.filename}')">Download</button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        async function downloadFile(filename) {
+            try {
+                const response = await fetch(`${API_BASE}/api/data/download/${encodeURIComponent(filename)}`);
+                const data = await response.json();
+
+                if (data.result && data.result.url) {
+                    // Open the presigned URL in a new tab to trigger download
+                    window.open(data.result.url, '_blank');
+                } else {
+                    throw new Error('Could not get download URL');
+                }
+            } catch (error) {
+                alert(`Error downloading file: ${error.message}`);
+            }
+        }
+
+        // Search functionality
+        document.getElementById('search').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = allFiles.filter(f => f.filename.toLowerCase().includes(query));
+            renderFiles(filtered);
+        });
+
+        // Load files on page load
+        loadFiles();
+    </script>
+</body>
+</html>
