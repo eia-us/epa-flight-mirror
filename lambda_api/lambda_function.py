@@ -146,6 +146,10 @@ def handle_map_overlay(event):
         reporting_year = body.get('reportingYear', 2023)
         state = body.get('state', 'US')
         data_source = body.get('dataSource', 'E')
+        selected_sectors = body.get('selectedSectorAndSubsectors', [])
+
+        # Extract sector names from the selection
+        sector_names = [s.get('sectorName', '') for s in selected_sectors if s.get('sectorName')]
 
         # Download required Parquet files
         facilities_path = get_local_parquet("RLPS_GHG_EMITTER_FACILITIES")
@@ -174,6 +178,13 @@ def handle_map_overlay(event):
 
         if state and state != 'US':
             query += f" AND f.state = '{state}'"
+
+        # Filter by selected sectors if any are specified
+        if sector_names:
+            # Escape single quotes in sector names for SQL safety
+            escaped_names = [name.replace("'", "''") for name in sector_names]
+            sector_list = ','.join([f"'{name}'" for name in escaped_names])
+            query += f" AND s.sector_name IN ({sector_list})"
 
         query += " GROUP BY f.facility_id, f.latitude, f.longitude"
 
