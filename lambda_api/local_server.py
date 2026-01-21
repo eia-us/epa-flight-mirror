@@ -6,7 +6,7 @@ Runs the Lambda handler locally for testing
 
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from handler import lambda_handler
+from lambda_function import lambda_handler
 
 PORT = 4000
 

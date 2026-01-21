@@ -1102,6 +1102,275 @@ def handle_facility_hover(event, year):
         print(f"Error in facility_hover: {e}")
         return cors_response(500, {'messages': [{'text': str(e), 'type': 500}]})
 
+def handle_facility_details(event, facility_id, year):
+    """GET /api/facility/{id}/details/{year} - Return full facility details for details page"""
+    try:
+        query_params = event.get('queryStringParameters', {}) or {}
+        ds = query_params.get('ds', 'E')  # data source, default to 'E'
+
+        # Download required Parquet files
+        facilities_path = get_local_parquet("RLPS_GHG_EMITTER_FACILITIES")
+        sector_path = get_local_parquet("RLPS_GHG_EMITTER_SECTOR")
+        dim_facility_path = get_local_parquet("PUB_DIM_FACILITY")
+
+        db = get_connection()
+
+        # Get facility info from main table
+        facility_query = f"""
+            SELECT
+                facility_id,
+                facility_name,
+                address1,
+                address2,
+                city,
+                state,
+                county,
+                zip,
+                latitude,
+                longitude,
+                parent_company,
+                add_naics_code,
+                year
+            FROM read_parquet('{facilities_path}')
+            WHERE facility_id = '{facility_id}'
+                AND year = '{year}'
+            LIMIT 1
+        """
+        facility_result = db.execute(facility_query).fetchone()
+
+        if not facility_result:
+            return cors_response(404, {'messages': [{'text': 'Facility not found', 'type': 404}]})
+
+        # Get additional facility info from PUB_DIM_FACILITY (frs_id, program_sys_id, etc.)
+        dim_query = f"""
+            SELECT
+                frs_id,
+                program_sys_id,
+                naics_code,
+                reported_subparts,
+                program_name
+            FROM read_parquet('{dim_facility_path}')
+            WHERE facility_id = '{facility_id}'
+                AND year = '{year}'
+            LIMIT 1
+        """
+        dim_result = db.execute(dim_query).fetchone()
+
+        # Get all reporting years for this facility (for year dropdown)
+        years_query = f"""
+            SELECT DISTINCT year
+            FROM read_parquet('{facilities_path}')
+            WHERE facility_id = '{facility_id}'
+            ORDER BY year DESC
+        """
+        years_result = db.execute(years_query).fetchall()
+        fac_reporting_years = [str(row[0]) for row in years_result]
+
+        # Get total emissions for this facility/year
+        total_query = f"""
+            SELECT SUM(CAST(co2e_emission AS DOUBLE)) as total
+            FROM read_parquet('{sector_path}')
+            WHERE facility_id = '{facility_id}'
+                AND year = '{year}'
+        """
+        total_result = db.execute(total_query).fetchone()
+        total_emissions = round(float(total_result[0])) if total_result and total_result[0] else 0
+
+        # Get emissions by subpart/sector
+        subpart_query = f"""
+            SELECT
+                sector_name,
+                SUM(CAST(co2e_emission AS DOUBLE)) as total_emission,
+                subsector_name
+            FROM read_parquet('{sector_path}')
+            WHERE facility_id = '{facility_id}'
+                AND year = '{year}'
+            GROUP BY sector_name, subsector_name
+            ORDER BY total_emission DESC
+        """
+        subpart_result = db.execute(subpart_query).fetchall()
+        subpart_emissions = [{
+            'type': row[0] or 'Unknown',
+            'quantity': round(float(row[1])) if row[1] else 0,
+            'subpartName': row[2],
+            'state': None
+        } for row in subpart_result]
+
+        # Get emissions by gas type
+        gas_query = f"""
+            SELECT
+                gas_name,
+                SUM(CAST(co2e_emission AS DOUBLE)) as total_emission
+            FROM read_parquet('{sector_path}')
+            WHERE facility_id = '{facility_id}'
+                AND year = '{year}'
+            GROUP BY gas_name
+            ORDER BY total_emission DESC
+        """
+        gas_result = db.execute(gas_query).fetchall()
+
+        # Format gas names with HTML subscripts like EPA does
+        def format_gas_name(name):
+            if not name:
+                return 'Unknown'
+            # Map database names to EPA-style formatted names
+            name_map = {
+                'Carbon Dioxide': 'Carbon Dioxide (CO<sub>2</sub>)',
+                'Biogenic CO2': 'Biogenic CO<sub>2</sub>',
+                'Methane': 'Methane (CH<sub>4</sub>)',
+                'Nitrous Oxide': 'Nitrous Oxide (N<sub>2</sub>O)',
+                'HFCs': 'Hydrofluorocarbons (HFCs)',
+                'PFCs': 'Perfluorocarbons (PFCs)',
+                'Sulfur Hexafluoride': 'Sulfur Hexafluoride (SF<sub>6</sub>)',
+                'Nitrogen Triflouride': 'Nitrogen Trifluoride (NF<sub>3</sub>)',
+            }
+            return name_map.get(name, name)
+
+        gas_emissions = [{
+            'type': format_gas_name(row[0]),
+            'quantity': round(float(row[1])) if row[1] else 0,
+            'subpartName': None,
+            'state': None
+        } for row in gas_result]
+
+        # Extract additional fields from dim_facility if available
+        frs_id = dim_result[0] if dim_result else None
+        program_sys_id = dim_result[1] if dim_result else None
+        naics_code = dim_result[2] if dim_result else facility_result[11]
+        reported_subparts = dim_result[3] if dim_result else None
+        program_name = dim_result[4] if dim_result else 'Green House Gas e-GGRT'
+
+        # Build facility object matching EPA structure
+        facility_obj = {
+            'id': {
+                'facilityId': int(facility_result[0]) if facility_result[0] else None,
+                'year': int(facility_result[12]) if facility_result[12] else int(year)
+            },
+            'latitude': float(facility_result[8]) if facility_result[8] else None,
+            'longitude': float(facility_result[9]) if facility_result[9] else None,
+            'city': facility_result[4],
+            'state': facility_result[5],
+            'zip': facility_result[7],
+            'countyFips': None,
+            'county': facility_result[6],
+            'address1': facility_result[2],
+            'address2': facility_result[3],
+            'facilityName': facility_result[1],
+            'stateName': None,
+            'naicsCode': naics_code,
+            'emissionClassification': None,
+            'programName': program_name,
+            'programSysId': program_sys_id,
+            'frsId': frs_id,
+            'cemsUsed': None,
+            'co2Captured': None,
+            'reportedSubparts': reported_subparts,
+            'co2EmittedSupplied': None,
+            'html': None,
+            'publicXml': None,
+            'parentCompany': facility_result[10],
+            'emissions': [],
+            'peEmissions': [],
+            'fcEmissions': [],
+            'ucEmissions': [],
+            'emCoal': [],
+            'emNg': [],
+            'emPet': [],
+            'emOther': [],
+            'emSorb': [],
+            'layers': [],
+            'basins': [],
+            'facStatus': [],
+            'territories': []
+        }
+
+        # Determine if facility has trend data (more than one year of data)
+        has_trend = len(fac_reporting_years) > 1
+
+        return cors_response(200, {
+            'result': {
+                'facilityDetails': {
+                    'facility': facility_obj,
+                    'parentCompanies': None,
+                    'totalEmissions': total_emissions,
+                    'subpartEmissions': subpart_emissions,
+                    'gasEmissions': gas_emissions,
+                    'subpartDetails': {},
+                    'facReportingYears': fac_reporting_years,
+                    'hasTrend': has_trend,
+                    'hasBT': False
+                }
+            },
+            'messages': []
+        })
+
+    except Exception as e:
+        print(f"Error in facility_details: {e}")
+        import traceback
+        traceback.print_exc()
+        return cors_response(500, {'messages': [{'text': str(e), 'type': 500}]})
+
+def handle_facility_trends(event, facility_id, ds):
+    """GET /api/facilities/{id}/trends/{ds} - Return facility emission trends for chart"""
+    try:
+        query_params = event.get('queryStringParameters', {}) or {}
+        yr = query_params.get('yr', '2023')
+
+        # Download required Parquet files
+        sector_path = get_local_parquet("RLPS_GHG_EMITTER_SECTOR")
+
+        db = get_connection()
+
+        # Get emissions by year for this facility
+        trends_query = f"""
+            SELECT
+                year,
+                SUM(CAST(co2e_emission AS DOUBLE)) as total_emission
+            FROM read_parquet('{sector_path}')
+            WHERE facility_id = '{facility_id}'
+            GROUP BY year
+            ORDER BY year ASC
+        """
+        trends_result = db.execute(trends_query).fetchall()
+
+        if not trends_result:
+            return cors_response(200, {
+                'result': {
+                    'unit': 'Metric Tons',
+                    'xAxis': {'categories': []},
+                    'series': [{
+                        'name': 'Emissions',
+                        'data': [],
+                        'color': '#000',
+                        'showInLegend': False
+                    }]
+                },
+                'messages': []
+            })
+
+        categories = [str(row[0]) for row in trends_result]
+        data = [round(float(row[1]), 1) if row[1] else 0 for row in trends_result]
+
+        return cors_response(200, {
+            'result': {
+                'unit': 'Metric Tons',
+                'xAxis': {'categories': categories},
+                'series': [{
+                    'name': 'Emissions',
+                    'data': data,
+                    'color': '#000',
+                    'showInLegend': False
+                }]
+            },
+            'messages': []
+        })
+
+    except Exception as e:
+        print(f"Error in facility_trends: {e}")
+        import traceback
+        traceback.print_exc()
+        return cors_response(500, {'messages': [{'text': str(e), 'type': 500}]})
+
 # Route mapping
 ROUTES = {
     ('GET', '/api/version'): handle_version,
@@ -1164,6 +1433,22 @@ def lambda_handler(event, context):
     if '/api/facility/hover/' in path or '/ghgp/api/facility/hover/' in path:
         year = path.split('/')[-1]
         return handle_facility_hover(event, year)
+
+    # Handle facility details: /api/facility/{id}/details/{year}
+    if '/details/' in path and ('/api/facility/' in path or '/ghgp/api/facility/' in path):
+        parts = path.rstrip('/').split('/')
+        # Path: /api/facility/{id}/details/{year} or /ghgp/api/facility/{id}/details/{year}
+        year = parts[-1]
+        facility_id = parts[-3]  # id is 3 positions from the end
+        return handle_facility_details(event, facility_id, year)
+
+    # Handle facility trends: /api/facilities/{id}/trends/{ds}
+    if '/trends/' in path and ('/api/facilities/' in path or '/ghgp/api/facilities/' in path):
+        parts = path.rstrip('/').split('/')
+        # Path: /api/facilities/{id}/trends/{ds} or /ghgp/api/facilities/{id}/trends/{ds}
+        ds = parts[-1]
+        facility_id = parts[-3]  # id is 3 positions from the end
+        return handle_facility_trends(event, facility_id, ds)
 
     # Handle sector trend with path parameters: /api/sector/trend/{sectorId}/{level}
     if '/api/sector/trend/' in path or '/ghgp/api/sector/trend/' in path:

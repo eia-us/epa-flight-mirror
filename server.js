@@ -4,7 +4,8 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 3000;
-const EPA_API_HOST = 'ghgdata.epa.gov';
+const LAMBDA_API_HOST = 'localhost';
+const LAMBDA_API_PORT = 4000;
 
 // MIME types for serving static files
 const MIME_TYPES = {
@@ -24,8 +25,8 @@ const MIME_TYPES = {
     '.eot': 'application/vnd.ms-fontobject'
 };
 
-// Proxy request to EPA API
-function proxyToEPA(req, res, apiPath) {
+// Proxy request to local Lambda API
+function proxyToLambdaAPI(req, res, apiPath) {
     // Collect request body first
     let bodyChunks = [];
 
@@ -35,14 +36,13 @@ function proxyToEPA(req, res, apiPath) {
         const body = Buffer.concat(bodyChunks);
 
         const options = {
-            hostname: EPA_API_HOST,
-            port: 443,
+            hostname: LAMBDA_API_HOST,
+            port: LAMBDA_API_PORT,
             path: apiPath,
             method: req.method,
             headers: {
                 'Content-Type': req.headers['content-type'] || 'application/json',
-                'Accept': req.headers['accept'] || 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+                'Accept': req.headers['accept'] || 'application/json'
             }
         };
 
@@ -50,12 +50,12 @@ function proxyToEPA(req, res, apiPath) {
             options.headers['Content-Length'] = body.length;
         }
 
-        console.log(`Proxying ${req.method} ${apiPath} to EPA API`);
+        console.log(`Proxying ${req.method} ${apiPath} to Lambda API (localhost:${LAMBDA_API_PORT})`);
         if (body.length > 0) {
             console.log(`Request body (${body.length} bytes): ${body.toString().substring(0, 2000)}`);
         }
 
-        const proxyReq = https.request(options, (proxyRes) => {
+        const proxyReq = http.request(options, (proxyRes) => {
             // Collect response
             let responseChunks = [];
 
@@ -81,9 +81,9 @@ function proxyToEPA(req, res, apiPath) {
         });
 
         proxyReq.on('error', (err) => {
-            console.error('Proxy error:', err);
+            console.error('Lambda API proxy error:', err);
             res.writeHead(500);
-            res.end(JSON.stringify({ error: 'Proxy error: ' + err.message }));
+            res.end(JSON.stringify({ error: 'Lambda API proxy error: ' + err.message + '. Make sure the Lambda API server is running on port ' + LAMBDA_API_PORT }));
         });
 
         if (body.length > 0) {
@@ -130,9 +130,11 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Proxy API requests to EPA
+    // Proxy API requests to local Lambda API
     if (pathname.startsWith('/ghgp/api/')) {
-        proxyToEPA(req, res, pathname);
+        // Include query string in the proxy path
+        const fullPath = pathname + url.search;
+        proxyToLambdaAPI(req, res, fullPath);
         return;
     }
 
@@ -147,6 +149,15 @@ const server = http.createServer((req, res) => {
         }
 
         const filePath = path.join(__dirname, 'flight', localPath);
+
+        // Check if file exists - if not, serve index.html for SPA routing
+        // This allows React Router to handle routes like /flight/details/123/2023/GHGRP
+        if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+            const indexPath = path.join(__dirname, 'flight', 'index.html');
+            serveStaticFile(res, indexPath);
+            return;
+        }
+
         serveStaticFile(res, filePath);
         return;
     }
